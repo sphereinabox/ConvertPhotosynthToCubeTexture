@@ -11,11 +11,11 @@ You will need an application to copy the files from your device or pull them fro
 
 ## Examples
 
-** Output a single panorama as a 2048x2048 PNG file named output.png **
+**Output a single panorama as a 2048x2048 PNG file named output.png**
 
 	ConvertPhotosynthToCubeTexture.exe -file "panorama\003F255D-7DB2-4B73-A079-9D89533D901C\deepzoom\CubeManifest.txt" -out output.png -size 2048
 
-** Output all panoramas as 1024x1024 PNG files to directory named "outfiles" **
+**Output all panoramas as 1024x1024 PNG files to directory named "outfiles"**
 
 	ConvertPhotosynthToCubeTexture.exe -dir "panorama" -out "outfiles" -size 1024
 
