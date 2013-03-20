@@ -36,7 +36,7 @@ namespace ConvertPhotosynthToCubeTexture
             var size = 1024; // -size 1234, defaults to 1024. Specifies the width and height of the result PNG file
 
             // To process a single panorama:
-            var singlePanoramaCubeManifestTxt = string.Empty; // -file "folder\panorama\2C1964E2-E896-44F6-B8B5-9D2F2485DB4C\deepzoom\CubeManifest.txt"
+            var singlePanoramaCubeManifestTxt = string.Empty; // -file "folder\panorama\02134124-FEA6-FEF6-BBB5-BA323423DB4C\deepzoom\CubeManifest.txt"
             var singlePanoramaOutputFile = string.Empty; // -out "example.png"
 
             // For processing all panorama files in a directory:
@@ -332,8 +332,19 @@ Options:
                                 new Rectangle(
                                     faceRectangle.Left + faceRectangle.Width * (maxImageSize * col) / levelSize,
                                     faceRectangle.Top + faceRectangle.Height * (maxImageSize * row) / levelSize,
-                                    faceRectangle.Width * faceImage.Width / levelSize,
-                                    faceRectangle.Height * faceImage.Height / levelSize);
+                                    faceRectangle.Width * (maxImageSize * (col+1)) / levelSize
+                                        - faceRectangle.Width * (maxImageSize * col) / levelSize,
+                                    faceRectangle.Height * (maxImageSize * (row + 1)) / levelSize
+                                        - faceRectangle.Height * (maxImageSize * row) / levelSize);
+                            // The last row/column might not be the same size. Fill the remainder:
+                            if (col == numImagesPerRow - 1)
+                            {
+                                destRectangle.Width = faceRectangle.Width - destRectangle.Left + faceRectangle.Left;
+                            }
+                            if (row == numImagesPerRow - 1)
+                            {
+                                destRectangle.Height = faceRectangle.Height - destRectangle.Top + faceRectangle.Top;
+                            }
                             graphics.DrawImage(
                                 faceImage,
                                 destRectangle,
