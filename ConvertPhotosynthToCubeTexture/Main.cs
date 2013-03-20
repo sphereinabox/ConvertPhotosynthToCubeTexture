@@ -1,3 +1,23 @@
+/*
+ * Copyright (c) 2013 Nick Winters (sphereinabox)
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to 
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
+ * of the Software, and to permit persons to whom the Software is furnished to do
+ * so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all 
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -13,43 +33,162 @@ namespace ConvertPhotosynthToCubeTexture
     {
         public static void Main(string[] args)
         {
-            var panoramasFolder =
-                @"C:\Users\nwint_000\Desktop\Photosynth panoramas from iPhone\panorama";
+            var size = 1024; // -size 1234, defaults to 1024. Specifies the width and height of the result PNG file
 
-            // Process all panoramas:
-            foreach (string panoramaGuidDirectory in Directory.GetDirectories(panoramasFolder))
+            // To process a single panorama:
+            var singlePanoramaCubeManifestTxt = string.Empty; // -file "folder\panorama\2C1964E2-E896-44F6-B8B5-9D2F2485DB4C\deepzoom\CubeManifest.txt"
+            var singlePanoramaOutputFile = string.Empty; // -out "example.png"
+
+            // For processing all panorama files in a directory:
+            var panoramaDirectory = string.Empty; // -dir "panorama"
+            var outputDirectory = string.Empty; // -out "outputfiles"
+
+            var argumentError = false;
+
+            // Parameter Parsing
+            for (int currentArgIndex = 0;
+                 currentArgIndex + 1 < args.Length && !argumentError;
+                 currentArgIndex += 2)
             {
-                var directoryNameOnly = Path.GetFileName(panoramaGuidDirectory);
+                var argName = args[currentArgIndex];
+                var nextArg = args[currentArgIndex + 1];
+                if (argName.StartsWith("-") || argName.StartsWith("/"))
+                {
+                    argName = argName.Substring(1).ToLowerInvariant().Trim();
+                    if (argName == "file" || argName == "f")
+                    {
+                        singlePanoramaCubeManifestTxt = nextArg;
+                        if (!File.Exists(singlePanoramaCubeManifestTxt))
+                        {
+                            argumentError = true;
+                            Console.WriteLine("Error: -file argument '{0}' does not exist",
+                                              singlePanoramaCubeManifestTxt);
+                        }
+                    }
+                    else if (argName == "dir" || argName == "d")
+                    {
+                        panoramaDirectory = nextArg;
+                        if (!Directory.Exists(panoramaDirectory))
+                        {
+                            argumentError = true;
+                            Console.WriteLine("Error: -dir argument '{0}' does not exist", panoramaDirectory);
+                        }
+                    }
+                    else if (argName == "out" || argName == "o")
+                    {
+                        outputDirectory = singlePanoramaOutputFile = nextArg;
+                    }
+                    else if (argName == "size" || argName == "s")
+                    {
+                        if (!int.TryParse(nextArg, out size))
+                        {
+                            argumentError = true;
+                            Console.WriteLine("Error: -size argument '{0}' is not an integer", nextArg);
+                        }
+                        if (size <= 1)
+                        {
+                            argumentError = true;
+                            Console.WriteLine("Error: -size argument '{0}' must be greater than 1", size);
+                        }
+                    }
+                    else if (argName == "help" || argName == "-help" || argName == "h" || argName == "?")
+                    {
+                        argumentError = true;
+                        // Will print help below. Don't need to also say that I don't recognize -help option.
+                    }
+                    else
+                    {
+                        argumentError = true;
+                        Console.WriteLine("Unrecognized Argument '{0}'", argName);
+                    }
+                }
+                else
+                {
+                    argumentError = true;
+                    Console.WriteLine("Unrecognized Argument '{0}'", argName);
+                }
+            }
+
+            // Extra parameter validation
+            if (!argumentError &&
+                !string.IsNullOrEmpty(panoramaDirectory) &&
+                string.IsNullOrEmpty(outputDirectory))
+            {
+                argumentError = true;
+                Console.WriteLine("Error: When -dir is specified, the output directory must be specified with the -out argument.");
+            }
+            else if (!argumentError &&
+                     !string.IsNullOrEmpty(singlePanoramaCubeManifestTxt) &&
+                     string.IsNullOrEmpty(singlePanoramaOutputFile))
+            {
+                argumentError = true;
+                Console.WriteLine("Error: When -file is specified, the output .png file must be specified with the -out argument.");
+            }
+            
+            if (!argumentError && 
+                !string.IsNullOrEmpty(panoramaDirectory) && 
+                !string.IsNullOrEmpty(outputDirectory))
+            {
+                CompositeAllPanoramasInDirectory(size/4, panoramaDirectory, outputDirectory);
+            }
+            else if (!argumentError &&
+                     !string.IsNullOrEmpty(singlePanoramaCubeManifestTxt) &&
+                     !string.IsNullOrEmpty(singlePanoramaOutputFile))
+            {
+                var cubeManifest = ParseCubeManifest(singlePanoramaCubeManifestTxt);
+                CompositeCubemapIntoSingleImage(cubeManifest, size/4, singlePanoramaOutputFile);
+            }
+            else
+            {
+                Console.WriteLine(
+                    @"Process a Photosynth for iOS panorama into one .png file for all 6 cube faces.
+
+Usage: ConvertPhotosynthToCubeTexture.exe -file CubeManifest.txt -out result.png
+or ConvertPhotosynthToCubeTexture.exe -dir panoramas -out outputFilesDirectory
+
+Options:
+-file   Process a single panorama. Specify the deepzoom/CubeManifest.txt for the 
+        panorama and the images will be found relative to the specified file.
+-dir    Process all panoramas in directories named with GUIDs underneath the 
+        specified directory.
+-out    Specify either the output .png file (when using -file) or output 
+        directory (when using -dir).
+-size   Dimension of one side of the resulting .png file. Defaults to 1024 for
+        a 1024x1024 png file.
+");
+            }
+        }
+
+        private static void CompositeAllPanoramasInDirectory(int faceSize, string panoramaDirectory, string outputDirectory)
+        {
+            // Process all panoramas:
+            var processedPanoramas = 0;
+            foreach (string panoramaGuidDirectory in Directory.GetDirectories(panoramaDirectory))
+            {
+                var guidDirectoryName = Path.GetFileName(panoramaGuidDirectory);
                 // Folder names must be GUIDs
                 if (
-                    !Regex.IsMatch(directoryNameOnly,
+                    !Regex.IsMatch(guidDirectoryName,
                                    "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"))
                 {
                     continue;
                 }
 
-                Console.WriteLine(panoramaGuidDirectory);
-                var deepzoomPath = Path.Combine(panoramasFolder, panoramaGuidDirectory, "deepzoom");
+                Console.WriteLine("Processing Panorama in {0}", panoramaGuidDirectory);
+                var deepzoomPath = Path.Combine(panoramaGuidDirectory, "deepzoom");
                 var cubeManifestPath = Path.Combine(deepzoomPath, "CubeManifest.txt");
                 var cubeManifest = ParseCubeManifest(cubeManifestPath);
-                Console.WriteLine(cubeManifest.LargestFaceSize);
-                CompositeCubemapIntoSingleImage(cubeManifest);
+                CompositeCubemapIntoSingleImage(cubeManifest, faceSize, Path.Combine(outputDirectory, guidDirectoryName + ".png"));
+                processedPanoramas += 1;
             }
+            Console.WriteLine("Processed {0} panoramas underneath directory", processedPanoramas);
         }
 
-        private static void CompositeCubemapIntoSingleImage(CubeManifest cubeManifest)
+        private static void CompositeCubemapIntoSingleImage(CubeManifest cubeManifest, int faceSize, string synthOutputCubemapPath)
         {
-            const int faceSize = 1024;
-
             string deepzoomroot = Path.GetDirectoryName(cubeManifest.CubeManifestPath);
-            var guidDirectoryPath = Path.GetDirectoryName(deepzoomroot);
-            var guid = Path.GetFileName(guidDirectoryPath);
-            // Note: does not typically exist. I created it for testing.
-            var outputFolder = Path.Combine(
-                Path.GetDirectoryName(Path.GetDirectoryName(guidDirectoryPath)),
-                "composite");
-            var synthOutputCubemapPath = Path.Combine(outputFolder, guid + ".png");
-            // combine images into single .png
+            
+            // Combine images into single .png
             using (var bmp = new Bitmap(faceSize * 4, faceSize * 4))
             {
                 using (var graphics = Graphics.FromImage(bmp))
@@ -57,27 +196,27 @@ namespace ConvertPhotosynthToCubeTexture
                     ProcessFace(graphics,
                                 Path.Combine(deepzoomroot, "left_files"),
                                 new Rectangle(0, faceSize, faceSize, faceSize),
-                                cubeManifest.LargestFaceSize, cubeManifest.LargestFaceSize);
+                                cubeManifest.LargestFaceSize);
                     ProcessFace(graphics,
                             Path.Combine(deepzoomroot, "front_files"),
                             new Rectangle(faceSize, faceSize, faceSize, faceSize),
-                            cubeManifest.LargestFaceSize, cubeManifest.LargestFaceSize);
+                            cubeManifest.LargestFaceSize);
                     ProcessFace(graphics,
                             Path.Combine(deepzoomroot, "right_files"),
                             new Rectangle(2 * faceSize, faceSize, faceSize, faceSize),
-                            cubeManifest.LargestFaceSize, cubeManifest.LargestFaceSize);
+                            cubeManifest.LargestFaceSize);
                     ProcessFace(graphics,
                             Path.Combine(deepzoomroot, "back_files"),
                             new Rectangle(3 * faceSize, faceSize, faceSize, faceSize),
-                            cubeManifest.LargestFaceSize, cubeManifest.LargestFaceSize);
+                            cubeManifest.LargestFaceSize);
                     ProcessFace(graphics,
                             Path.Combine(deepzoomroot, "top_files"),
                             new Rectangle(faceSize, 0, faceSize, faceSize),
-                            cubeManifest.LargestFaceSize, cubeManifest.LargestFaceSize);
+                            cubeManifest.LargestFaceSize);
                     ProcessFace(graphics,
                             Path.Combine(deepzoomroot, "bottom_files"),
                             new Rectangle(faceSize, 2 * faceSize, faceSize, faceSize),
-                            cubeManifest.LargestFaceSize, cubeManifest.LargestFaceSize);
+                            cubeManifest.LargestFaceSize);
                 }
                 bmp.Save(synthOutputCubemapPath, ImageFormat.Png);
             }
@@ -99,6 +238,7 @@ namespace ConvertPhotosynthToCubeTexture
             //                          3,left,0,0,0,1040,1040,1040,1040,0
             //                          4,top,0,0,0,1040,1040,1040,1040,0
             //                          5,bottom,0,832,0,1040,199,1040,199,832
+
             // Note that not all faces of the cube are always included.
 
             if (cubeManifestLines.Length < 4)
@@ -141,8 +281,7 @@ namespace ConvertPhotosynthToCubeTexture
             public int LargestFaceSize;
         }
 
-        private static void ProcessFace(Graphics graphics, string faceDirectory, Rectangle faceRectangle, int levelWidth,
-                                        int levelHeight)
+        private static void ProcessFace(Graphics graphics, string faceDirectory, Rectangle faceRectangle, int levelSize)
         {
             if (!Directory.Exists(faceDirectory))
             {
@@ -162,14 +301,14 @@ namespace ConvertPhotosynthToCubeTexture
                 tempFaceLevel < 20;
                 tempFaceLevel += 1, tempFaceLevelSize *= 2)
             {
-                if (tempFaceLevelSize / 2 < levelWidth && levelWidth <= tempFaceLevelSize)
+                if (tempFaceLevelSize / 2 < levelSize && levelSize <= tempFaceLevelSize)
                 {
                     faceLevel = tempFaceLevel;
                     break;
                 }
             }
 
-            var numImagesPerRow = (int)Math.Ceiling((double)levelWidth / (maxImageSize-2));
+            var numImagesPerRow = (int)Math.Ceiling((double)levelSize / (maxImageSize-2));
 
             var faceLevelDirectory = Path.Combine(faceDirectory, faceLevel.ToString(CultureInfo.InvariantCulture));
             if (!Directory.Exists(faceLevelDirectory))
@@ -191,10 +330,10 @@ namespace ConvertPhotosynthToCubeTexture
                         {
                             var destRectangle =
                                 new Rectangle(
-                                    faceRectangle.Left + faceRectangle.Width * (maxImageSize * col) / levelWidth,
-                                    faceRectangle.Top + faceRectangle.Height * (maxImageSize * row) / levelHeight,
-                                    faceRectangle.Width * faceImage.Width / levelWidth,
-                                    faceRectangle.Height * faceImage.Height / levelHeight);
+                                    faceRectangle.Left + faceRectangle.Width * (maxImageSize * col) / levelSize,
+                                    faceRectangle.Top + faceRectangle.Height * (maxImageSize * row) / levelSize,
+                                    faceRectangle.Width * faceImage.Width / levelSize,
+                                    faceRectangle.Height * faceImage.Height / levelSize);
                             graphics.DrawImage(
                                 faceImage,
                                 destRectangle,
